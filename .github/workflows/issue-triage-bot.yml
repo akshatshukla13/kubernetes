@@ -1,0 +1,48 @@
+name: Issue Triage Bot
+
+# Add this file to .github/workflows/ in ANY repo (e.g. your fork of
+# kubernetes/kubernetes), together with the bot/ folder next to it.
+# When a new issue is opened, the bot comments a predicted kind/* type
+# + likely duplicates and applies the predicted label.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache the trained model
+        uses: actions/cache@v4
+        with:
+          path: bot/models/triage_model.joblib
+          key: triage-model-${{ hashFiles('bot/data/kubernetes_issues.csv.gz') }}
+
+      - name: Install ML dependencies
+        run: pip install -r bot/requirements.txt
+
+      - name: Run the triage bot
+        env:
+          # issue text via env on purpose: untrusted input must never be
+          # interpolated into a shell command
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATASET_REPO: kubernetes/kubernetes
+        run: python bot/triage_bot.py
